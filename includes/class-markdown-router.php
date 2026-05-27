@@ -149,11 +149,13 @@ class Singular_Markdown_Router {
 			return '';
 		}
 		if ( '/' === $path ) {
-			$path = '/index.md';
-		} else {
-			$path = untrailingslashit( $path ) . '.md';
+			return '/index.md';
 		}
-		return $path;
+		$path = untrailingslashit( $path );
+		if ( preg_match( '/\.md$/i', $path ) ) {
+			return $path;
+		}
+		return $path . '.md';
 	}
 
 	/**
@@ -306,10 +308,26 @@ class Singular_Markdown_Router {
 	}
 
 	/**
+	 * Whether the current request targets a .md URL.
+	 *
+	 * @return bool
+	 */
+	private static function is_markdown_request() {
+		if ( 1 === (int) get_query_var( self::QUERY_FLAG ) ) {
+			return true;
+		}
+		if ( empty( $_SERVER['REQUEST_URI'] ) ) {
+			return false;
+		}
+		$path = wp_parse_url( esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) ), PHP_URL_PATH );
+		return is_string( $path ) && preg_match( '/\.md$/i', $path );
+	}
+
+	/**
 	 * Add Link header on singular HTML pages.
 	 */
 	public static function maybe_send_alternate_link() {
-		if ( is_admin() ) {
+		if ( is_admin() || self::is_markdown_request() ) {
 			return;
 		}
 		if ( ! is_singular() && ! is_home() && ! is_archive() ) {
@@ -328,7 +346,7 @@ class Singular_Markdown_Router {
 	 * Print HTML alternate link tag in document head.
 	 */
 	public static function maybe_print_alternate_link_tag() {
-		if ( is_admin() || ( ! is_singular() && ! is_home() && ! is_archive() ) ) {
+		if ( is_admin() || self::is_markdown_request() || ( ! is_singular() && ! is_home() && ! is_archive() ) ) {
 			return;
 		}
 		$path = self::get_current_alternate_md_path();

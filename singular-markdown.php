@@ -3,7 +3,7 @@
  * Plugin Name:       	Singular Markdown
  * Plugin URI: 			https://github.com/shoot56/singular-markdown
  * Description:         Markdown alternates for public singular content at permalink + .md, with Link headers on HTML responses.
- * Version:             1.4.7
+ * Version:             1.4.8
  * Requires at least:   6.0
  * Requires PHP:        7.4
  * Author:              Dmitry Shutko
@@ -21,7 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SINGULAR_MARKDOWN_VERSION', '1.4.7' );
+define( 'SINGULAR_MARKDOWN_VERSION', '1.4.8' );
 define( 'SINGULAR_MARKDOWN_PLUGIN_FILE', __FILE__ );
 define( 'SINGULAR_MARKDOWN_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SINGULAR_MARKDOWN_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
