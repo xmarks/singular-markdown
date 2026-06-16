@@ -993,16 +993,128 @@ class Singular_Markdown_Generator {
 				return self::convert_children( $node, $heading_bump );
 
 			case 'img':
-				$src = $node->getAttribute( 'src' );
-				$alt = $node->getAttribute( 'alt' );
-				if ( '' === $src ) {
-					return '';
-				}
-				return '![' . self::escape_md_alt( $alt ) . '](' . self::escape_md_url( $src ) . ")\n\n";
+				$image = self::convert_image_element( $node );
+				return '' === $image ? '' : $image . "\n\n";
 
 			default:
 				return self::convert_inline_children( $node );
 		}
+	}
+
+	/**
+	 * Convert an image element to Markdown.
+	 *
+	 * Handles rendered lazy-load markup where src is a placeholder and the real
+	 * image lives in data attributes such as NitroPack's nitro-lazy-src.
+	 *
+	 * @param DOMElement $img Image element.
+	 * @return string Markdown image or empty.
+	 */
+	private static function convert_image_element( DOMElement $img ) {
+		$src = self::resolve_image_src( $img );
+		if ( '' === $src ) {
+			return '';
+		}
+
+		return '![' . self::escape_md_alt( $img->getAttribute( 'alt' ) ) . '](' . self::escape_md_url( $src ) . ')';
+	}
+
+	/**
+	 * Resolve the best usable image URL from normal and lazy-load attributes.
+	 *
+	 * @param DOMElement $img Image element.
+	 * @return string URL or empty.
+	 */
+	private static function resolve_image_src( DOMElement $img ) {
+		$source_attributes = array(
+			'src',
+			'nitro-lazy-src',
+			'data-src',
+			'data-lazy-src',
+			'data-original',
+			'data-ll-src',
+		);
+
+		/**
+		 * Ordered image URL attributes checked during Markdown conversion.
+		 *
+		 * @param string[]   $source_attributes Attribute names.
+		 * @param DOMElement $img               Image element.
+		 */
+		$source_attributes = (array) apply_filters( 'singular_markdown_image_source_attributes', $source_attributes, $img );
+
+		foreach ( $source_attributes as $attribute ) {
+			$url = $img->getAttribute( (string) $attribute );
+			if ( self::is_usable_media_url( $url ) ) {
+				return trim( $url );
+			}
+		}
+
+		$srcset_attributes = array(
+			'srcset',
+			'nitro-lazy-srcset',
+			'data-srcset',
+			'data-lazy-srcset',
+		);
+
+		/**
+		 * Ordered srcset attributes checked during Markdown conversion.
+		 *
+		 * @param string[]   $srcset_attributes Attribute names.
+		 * @param DOMElement $img               Image element.
+		 */
+		$srcset_attributes = (array) apply_filters( 'singular_markdown_image_srcset_attributes', $srcset_attributes, $img );
+
+		foreach ( $srcset_attributes as $attribute ) {
+			$url = self::first_usable_srcset_url( $img->getAttribute( (string) $attribute ) );
+			if ( '' !== $url ) {
+				return $url;
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Extract the first usable URL from a srcset-like value.
+	 *
+	 * @param string $srcset Srcset value.
+	 * @return string URL or empty.
+	 */
+	private static function first_usable_srcset_url( $srcset ) {
+		if ( '' === trim( (string) $srcset ) ) {
+			return '';
+		}
+
+		foreach ( explode( ',', (string) $srcset ) as $candidate ) {
+			$parts = preg_split( '/\s+/', trim( $candidate ) );
+			$url   = isset( $parts[0] ) ? $parts[0] : '';
+			if ( self::is_usable_media_url( $url ) ) {
+				return trim( $url );
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Determine whether a media URL is suitable for Markdown output.
+	 *
+	 * @param string $url URL candidate.
+	 * @return bool
+	 */
+	private static function is_usable_media_url( $url ) {
+		$url = trim( (string) $url );
+
+		if ( '' === $url ) {
+			return false;
+		}
+
+		if ( 0 === stripos( $url, 'data:' ) || 0 === stripos( $url, 'about:' ) ) {
+			return false;
+		}
+
+		return '' !== esc_url_raw( $url );
 	}
 
 	/**

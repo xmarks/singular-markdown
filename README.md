@@ -16,6 +16,8 @@ After install or update, open **Settings → Permalinks** and click **Save** onc
 3. **Strip noise** — remove nodes matching the built-in list plus **Extra strip selectors**, then apply the `singular_markdown_excluded_selectors` filter.
 4. **Convert** — page title as `#` heading, duplicate leading `h1` removed when it matches the title, block HTML → Markdown, then the `singular_markdown_output` filter.
 
+Image conversion supports common lazy-loading attributes when the rendered `src` is a placeholder. It checks normal `src`, NitroPack's `nitro-lazy-src`, common `data-*` lazy attributes, and srcset-style fallbacks before emitting Markdown image syntax.
+
 Automatic conversion runs in scheduled background jobs. Public `.md` requests do **not** run HTML fetching or conversion synchronously: if no cache exists yet, the request queues generation and returns `503 Retry-After`; if stale cache exists, stale Markdown is served while regeneration is queued.
 
 Archive/home Markdown (for example `/blog.md` or category archive `.md` URLs) is generated from the archive query: `# Archive Title`, then a list of eligible posts with `## [Post Title](permalink)` and each post excerpt/trimmed content. Archive caches use a short TTL and regenerate in the background.
@@ -71,6 +73,8 @@ Developers can override the final decision with filters (see below).
 - `singular_markdown_eligibility` — `(array $result, int $post_id)` with keys `eligible`, `code`, `message`; adjust or replace the full diagnostic result.
 - `singular_markdown_fetch_timeout` — `(int $timeout, int $post_id)` seconds for the HTML fetch request.
 - `singular_markdown_retry_fetch_without_sslverify` — `(bool $allowed, int $post_id, string $url, WP_Error $error)` allows one local/self-signed HTTPS retry without SSL verification when the initial rendered HTML fetch fails. Defaults to local/development or `.local` hosts only.
+- `singular_markdown_image_source_attributes` — `(string[] $attributes, DOMElement $img)` ordered image URL attributes checked before srcset fallbacks. Defaults include `src`, NitroPack `nitro-lazy-src`, and common lazy-load `data-*` attributes.
+- `singular_markdown_image_srcset_attributes` — `(string[] $attributes, DOMElement $img)` ordered srcset-style attributes checked when no direct image URL attribute is usable. Defaults include `srcset`, NitroPack `nitro-lazy-srcset`, and common lazy-load `data-*srcset` attributes.
 - `singular_markdown_cache_control` — `(string $header, int $post_id)` Cache-Control header for successful `.md` responses.
 - `singular_markdown_cache_eligibility` — `(bool $cache, int $post_id)` whether to cache eligibility decisions for five minutes.
 - `singular_markdown_listing_posts_per_page` — `(int $posts_per_page, array $mapping)` number of posts in configured listing page Markdown.
