@@ -1026,6 +1026,11 @@ class Singular_Markdown_Generator {
 	 * @return string URL or empty.
 	 */
 	private static function resolve_image_src( DOMElement $img ) {
+		$attachment_url = self::resolve_attachment_image_src( $img );
+		if ( '' !== $attachment_url ) {
+			return $attachment_url;
+		}
+
 		$source_attributes = array(
 			'src',
 			'nitro-lazy-src',
@@ -1046,7 +1051,7 @@ class Singular_Markdown_Generator {
 		foreach ( $source_attributes as $attribute ) {
 			$url = $img->getAttribute( (string) $attribute );
 			if ( self::is_usable_media_url( $url ) ) {
-				return trim( $url );
+				return self::normalize_media_url( $url );
 			}
 		}
 
@@ -1076,6 +1081,30 @@ class Singular_Markdown_Generator {
 	}
 
 	/**
+	 * Resolve a WordPress attachment URL from common wp-image-{id} classes.
+	 *
+	 * @param DOMElement $img Image element.
+	 * @return string URL or empty.
+	 */
+	private static function resolve_attachment_image_src( DOMElement $img ) {
+		if ( ! function_exists( 'wp_get_attachment_url' ) ) {
+			return '';
+		}
+
+		$classes = $img->getAttribute( 'class' );
+		if ( ! preg_match( '/(?:^|\s)wp-image-(\d+)(?:\s|$)/', $classes, $matches ) ) {
+			return '';
+		}
+
+		$url = wp_get_attachment_url( (int) $matches[1] );
+		if ( ! self::is_usable_media_url( $url ) ) {
+			return '';
+		}
+
+		return self::normalize_media_url( $url );
+	}
+
+	/**
 	 * Extract the first usable URL from a srcset-like value.
 	 *
 	 * @param string $srcset Srcset value.
@@ -1090,7 +1119,7 @@ class Singular_Markdown_Generator {
 			$parts = preg_split( '/\s+/', trim( $candidate ) );
 			$url   = isset( $parts[0] ) ? $parts[0] : '';
 			if ( self::is_usable_media_url( $url ) ) {
-				return trim( $url );
+				return self::normalize_media_url( $url );
 			}
 		}
 
@@ -1115,6 +1144,45 @@ class Singular_Markdown_Generator {
 		}
 
 		return '' !== esc_url_raw( $url );
+	}
+
+	/**
+	 * Normalize optimized CDN media URLs back to their source URL when possible.
+	 *
+	 * NitroPack URLs include the source host/path after the optimization segment,
+	 * for example:
+	 * cdn-*.nitrocdn.com/.../stage.example.com/wp-content/uploads/image.jpg.
+	 *
+	 * @param string $url URL candidate.
+	 * @return string Normalized URL.
+	 */
+	private static function normalize_media_url( $url ) {
+		$url = trim( (string) $url );
+
+		if ( '' === $url ) {
+			return '';
+		}
+
+		$parts = wp_parse_url( $url );
+		if ( empty( $parts['host'] ) || false === stripos( $parts['host'], 'nitrocdn.com' ) || empty( $parts['path'] ) ) {
+			return $url;
+		}
+
+		$path_segments = array_values( array_filter( explode( '/', $parts['path'] ) ) );
+		$wp_index      = array_search( 'wp-content', $path_segments, true );
+
+		if ( false === $wp_index || 0 === $wp_index || empty( $path_segments[ $wp_index + 1 ] ) ) {
+			return $url;
+		}
+
+		$source_host = $path_segments[ $wp_index - 1 ];
+		if ( false === strpos( $source_host, '.' ) ) {
+			return $url;
+		}
+
+		$source_path = implode( '/', array_slice( $path_segments, $wp_index ) );
+
+		return 'https://' . $source_host . '/' . $source_path;
 	}
 
 	/**
