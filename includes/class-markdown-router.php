@@ -102,6 +102,72 @@ class Singular_Markdown_Router {
 	}
 
 	/**
+	 * Normalize paths for strict current-URL comparisons.
+	 *
+	 * @param string $path Relative path.
+	 * @return string
+	 */
+	private static function normalize_path_for_compare( $path ) {
+		return strtolower( trim( rawurldecode( (string) $path ), '/' ) );
+	}
+
+	/**
+	 * Resolve a Markdown request path through Permalink Manager Lite/Pro.
+	 *
+	 * @param string $slug_path Path without .md.
+	 * @return int Post ID or 0.
+	 */
+	private static function resolve_permalink_manager_path_to_post_id( $slug_path ) {
+		$slug_path = trim( (string) $slug_path, '/' );
+		if ( '' === $slug_path ) {
+			return 0;
+		}
+
+		if ( class_exists( 'Permalink_Manager_URI_Functions' ) && method_exists( 'Permalink_Manager_URI_Functions', 'find_uri' ) ) {
+			$found = Permalink_Manager_URI_Functions::find_uri( $slug_path, true, 'posts' );
+			if ( is_numeric( $found ) ) {
+				return (int) $found;
+			}
+		}
+
+		$uris = get_option( 'permalink-manager-uris', array() );
+		if ( ! is_array( $uris ) ) {
+			return 0;
+		}
+
+		$requested = self::normalize_path_for_compare( $slug_path );
+		foreach ( $uris as $post_id => $uri ) {
+			if ( ! is_numeric( $post_id ) || ! is_string( $uri ) ) {
+				continue;
+			}
+			if ( $requested === self::normalize_path_for_compare( $uri ) ) {
+				return (int) $post_id;
+			}
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Confirm the requested path matches the post's current generated Markdown URL.
+	 *
+	 * @param int    $post_id   Post ID.
+	 * @param string $slug_path Requested path without .md.
+	 * @return bool
+	 */
+	private static function is_canonical_post_md_path( $post_id, $slug_path ) {
+		$current_path = self::get_alternate_md_path( $post_id );
+		if ( '' === $current_path ) {
+			return false;
+		}
+
+		$current_path = self::normalize_rewrite_path( $current_path );
+		$current_path = preg_replace( '/\.md$/i', '', $current_path );
+
+		return self::normalize_path_for_compare( $current_path ) === self::normalize_path_for_compare( $slug_path );
+	}
+
+	/**
 	 * Map rewrite slug path to post ID.
 	 *
 	 * @param string $slug_path Path without .md (may contain slashes).
@@ -112,11 +178,16 @@ class Singular_Markdown_Router {
 
 		if ( 'index' === $slug_path ) {
 			$fid = (int) get_option( 'page_on_front' );
-			return $fid > 0 ? $fid : 0;
+			return $fid > 0 && self::is_canonical_post_md_path( $fid, $slug_path ) ? $fid : 0;
 		}
 
 		if ( '' === $slug_path ) {
 			return 0;
+		}
+
+		$id = self::resolve_permalink_manager_path_to_post_id( $slug_path );
+		if ( $id && self::is_canonical_post_md_path( $id, $slug_path ) ) {
+			return (int) $id;
 		}
 
 		$candidates = array(
@@ -127,7 +198,7 @@ class Singular_Markdown_Router {
 
 		foreach ( $candidates as $c ) {
 			$id = url_to_postid( $c );
-			if ( $id ) {
+			if ( $id && self::is_canonical_post_md_path( $id, $slug_path ) ) {
 				return (int) $id;
 			}
 		}

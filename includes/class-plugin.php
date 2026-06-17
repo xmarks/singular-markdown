@@ -54,6 +54,8 @@ class Singular_Markdown_Plugin {
 		add_action( 'transition_post_status', array( $this, 'on_transition_post_status' ), 10, 3 );
 		add_action( 'before_delete_post', array( $this, 'on_before_delete_post' ), 10, 1 );
 		add_action( 'wp_trash_post', array( $this, 'on_trash_post' ), 10, 1 );
+		add_action( 'permalink_manager_updated_post_uri', array( $this, 'on_permalink_manager_updated_post_uri' ), 20, 6 );
+		add_action( 'updated_option', array( $this, 'on_updated_option' ), 20, 3 );
 
 		add_action( Singular_Markdown_Settings::CRON_HOOK_BATCH, array( __CLASS__, 'run_batch_regeneration' ) );
 		add_action( Singular_Markdown_Generator::CRON_HOOK_GENERATE, array( 'Singular_Markdown_Generator', 'run_scheduled_regeneration' ), 10, 1 );
@@ -178,6 +180,94 @@ class Singular_Markdown_Plugin {
 		if ( $post instanceof WP_Post ) {
 			$this->schedule_listing_pages_for_post_type( $post->post_type );
 		}
+	}
+
+	/**
+	 * Refresh Markdown when Permalink Manager changes a singular post URI.
+	 *
+	 * @param int    $post_id     Post ID.
+	 * @param string $new_uri     New custom URI.
+	 * @param string $old_uri     Previous custom URI.
+	 * @param string $native_uri  Native URI.
+	 * @param string $default_uri Default URI.
+	 * @param bool   $uri_saved   Whether the URI was saved.
+	 */
+	public function on_permalink_manager_updated_post_uri( $post_id, $new_uri = '', $old_uri = '', $native_uri = '', $default_uri = '', $uri_saved = true ) { // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable
+		$post_id = (int) $post_id;
+		if ( $post_id <= 0 ) {
+			return;
+		}
+		if ( false === $uri_saved && (string) $new_uri === (string) $old_uri ) {
+			return;
+		}
+
+		$this->refresh_post_markdown( $post_id );
+	}
+
+	/**
+	 * Refresh Markdown when permalink-related options change.
+	 *
+	 * @param string $option    Option name.
+	 * @param mixed  $old_value Previous value.
+	 * @param mixed  $value     New value.
+	 */
+	public function on_updated_option( $option, $old_value, $value ) {
+		if ( in_array( $option, array( 'permalink_structure', 'permalink-manager-permastructs' ), true ) ) {
+			if ( $old_value !== $value ) {
+				Singular_Markdown_Settings::schedule_full_regeneration();
+				Singular_Markdown_Settings::schedule_listing_pages_regeneration();
+			}
+			return;
+		}
+
+		if ( 'permalink-manager-uris' !== $option || $old_value === $value ) {
+			return;
+		}
+
+		$old_value = is_array( $old_value ) ? $old_value : array();
+		$value     = is_array( $value ) ? $value : array();
+		$post_ids  = array_unique( array_filter( array_map( 'absint', array_merge( array_keys( $old_value ), array_keys( $value ) ) ) ) );
+
+		foreach ( $post_ids as $post_id ) {
+			$old_uri = isset( $old_value[ $post_id ] ) ? $old_value[ $post_id ] : null;
+			$new_uri = isset( $value[ $post_id ] ) ? $value[ $post_id ] : null;
+			if ( $old_uri !== $new_uri ) {
+				$this->refresh_post_markdown( $post_id );
+			}
+		}
+	}
+
+	/**
+	 * Delete stale cache and schedule fresh Markdown for a post.
+	 *
+	 * @param int $post_id Post ID.
+	 */
+	private function refresh_post_markdown( $post_id ) {
+		$post_id = (int) $post_id;
+		$post    = get_post( $post_id );
+
+		Singular_Markdown_Post_Type_Registry::clear_post_eligibility_cache( $post_id );
+		Singular_Markdown_Storage::delete( $post_id );
+
+		if ( ! ( $post instanceof WP_Post ) ) {
+			return;
+		}
+
+		if ( ! Singular_Markdown_Post_Type_Registry::is_post_eligible( $post_id ) ) {
+			$this->schedule_listing_pages_for_post_type( $post->post_type );
+			return;
+		}
+
+		if ( Singular_Markdown_Post_Options::uses_custom_markdown( $post_id ) ) {
+			$md = Singular_Markdown_Post_Options::get_filtered_custom_markdown( $post_id );
+			if ( false !== $md && '' !== trim( (string) $md ) ) {
+				Singular_Markdown_Storage::write( $post_id, $md );
+			}
+		} else {
+			Singular_Markdown_Generator::schedule_regeneration( $post_id );
+		}
+
+		$this->schedule_listing_pages_for_post_type( $post->post_type );
 	}
 
 	/**
