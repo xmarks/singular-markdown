@@ -602,7 +602,7 @@ class Singular_Markdown_Generator {
 			$html = self::fallback_content_html( $post_id );
 		}
 
-		$fragment = self::extract_main_fragment_html( $html );
+		$fragment = self::extract_main_fragment_html( $html, $post_id );
 		if ( '' === $fragment ) {
 			$fragment = self::fallback_content_html( $post_id );
 		}
@@ -744,7 +744,7 @@ class Singular_Markdown_Generator {
 	 * @param string $full_html Full document HTML.
 	 * @return string HTML fragment (with body wrapper for DOM).
 	 */
-	private static function extract_main_fragment_html( $full_html ) {
+	private static function extract_main_fragment_html( $full_html, $post_id = 0 ) {
 		$dom = self::html_to_dom( $full_html );
 		if ( ! $dom ) {
 			return '';
@@ -752,7 +752,7 @@ class Singular_Markdown_Generator {
 
 		$xpath = new DOMXPath( $dom );
 
-		foreach ( self::get_main_content_selector_candidates() as $sel ) {
+		foreach ( self::get_post_content_selector_candidates( $post_id ) as $sel ) {
 			$sel = trim( (string) $sel );
 			if ( '' === $sel ) {
 				continue;
@@ -775,6 +775,32 @@ class Singular_Markdown_Generator {
 
 		$body = $dom->getElementsByTagName( 'body' )->item( 0 );
 		return $body ? self::inner_html( $body ) : '';
+	}
+
+	/**
+	 * Main content selectors with post-specific Elementor/WP wrappers first.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return string[]
+	 */
+	private static function get_post_content_selector_candidates( $post_id ) {
+		$post_id = absint( $post_id );
+		if ( $post_id <= 0 ) {
+			return self::get_main_content_selector_candidates();
+		}
+
+		$selectors = array(
+			'.elementor-' . $post_id,
+			'#post-' . $post_id,
+		);
+
+		foreach ( self::get_main_content_selector_candidates() as $selector ) {
+			if ( ! in_array( $selector, $selectors, true ) ) {
+				$selectors[] = $selector;
+			}
+		}
+
+		return $selectors;
 	}
 
 	/**
