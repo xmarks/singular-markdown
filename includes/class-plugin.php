@@ -25,6 +25,11 @@ class Singular_Markdown_Plugin {
 	const LEGACY_CRON_HOOK = 'flolive_md_batch_regenerate';
 
 	/**
+	 * Stored plugin version for one-time update tasks.
+	 */
+	const VERSION_OPTION_KEY = 'singular_markdown_version';
+
+	/**
 	 * Singleton instance.
 	 *
 	 * @var self|null
@@ -60,6 +65,8 @@ class Singular_Markdown_Plugin {
 		add_action( Singular_Markdown_Settings::CRON_HOOK_BATCH, array( __CLASS__, 'run_batch_regeneration' ) );
 		add_action( Singular_Markdown_Generator::CRON_HOOK_GENERATE, array( 'Singular_Markdown_Generator', 'run_scheduled_regeneration' ), 10, 1 );
 		add_action( Singular_Markdown_Generator::CRON_HOOK_GENERATE_ARCHIVE, array( 'Singular_Markdown_Generator', 'run_scheduled_archive_regeneration' ), 10, 1 );
+
+		$this->maybe_schedule_version_update();
 	}
 
 	/**
@@ -72,6 +79,24 @@ class Singular_Markdown_Plugin {
 		Singular_Markdown_Router::register_rewrites();
 		flush_rewrite_rules( false );
 		Singular_Markdown_Settings::schedule_full_regeneration();
+		update_option( self::VERSION_OPTION_KEY, SINGULAR_MARKDOWN_VERSION, false );
+	}
+
+	/**
+	 * Schedule regeneration once after plugin code updates change generation output.
+	 */
+	private function maybe_schedule_version_update() {
+		$stored_version = (string) get_option( self::VERSION_OPTION_KEY, '' );
+		if ( SINGULAR_MARKDOWN_VERSION === $stored_version ) {
+			return;
+		}
+
+		update_option( self::VERSION_OPTION_KEY, SINGULAR_MARKDOWN_VERSION, false );
+
+		if ( '' === $stored_version || version_compare( $stored_version, SINGULAR_MARKDOWN_VERSION, '<' ) ) {
+			Singular_Markdown_Settings::schedule_full_regeneration();
+			Singular_Markdown_Settings::schedule_listing_pages_regeneration();
+		}
 	}
 
 	/**

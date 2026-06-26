@@ -1060,6 +1060,7 @@ class Singular_Markdown_Generator {
 		$source_attributes = array(
 			'src',
 			'nitro-lazy-src',
+			'data-nitro-lazy-src',
 			'data-src',
 			'data-lazy-src',
 			'data-original',
@@ -1084,6 +1085,7 @@ class Singular_Markdown_Generator {
 		$srcset_attributes = array(
 			'srcset',
 			'nitro-lazy-srcset',
+			'data-nitro-lazy-srcset',
 			'data-srcset',
 			'data-lazy-srcset',
 		);
@@ -1173,11 +1175,12 @@ class Singular_Markdown_Generator {
 	}
 
 	/**
-	 * Normalize optimized CDN media URLs back to their source URL when possible.
+	 * Normalize optimized NitroPack media URLs back to their source URL when possible.
 	 *
-	 * NitroPack URLs include the source host/path after the optimization segment,
-	 * for example:
-	 * cdn-*.nitrocdn.com/.../stage.example.com/wp-content/uploads/image.jpg.
+	 * NitroPack CDN/static URLs include the source host/path after the
+	 * optimization segment, for example:
+	 * cdn-*.nitrocdn.com/.../example.com/wp-content/uploads/image.jpg
+	 * example.com/nitropack_static/.../example.com/wp-content/uploads/image.jpg.
 	 *
 	 * @param string $url URL candidate.
 	 * @return string Normalized URL.
@@ -1189,26 +1192,76 @@ class Singular_Markdown_Generator {
 			return '';
 		}
 
+		$normalized = self::extract_nitropack_source_media_url( $url );
+		if ( '' !== $normalized ) {
+			return $normalized;
+		}
+
+		return $url;
+	}
+
+	/**
+	 * Extract original upload URL embedded inside a NitroPack optimized URL.
+	 *
+	 * @param string $url URL candidate.
+	 * @return string Original media URL or empty.
+	 */
+	private static function extract_nitropack_source_media_url( $url ) {
 		$parts = wp_parse_url( $url );
-		if ( empty( $parts['host'] ) || false === stripos( $parts['host'], 'nitrocdn.com' ) || empty( $parts['path'] ) ) {
-			return $url;
+		if ( empty( $parts['path'] ) ) {
+			return '';
 		}
 
-		$path_segments = array_values( array_filter( explode( '/', $parts['path'] ) ) );
-		$wp_index      = array_search( 'wp-content', $path_segments, true );
+		$host = isset( $parts['host'] ) ? (string) $parts['host'] : '';
+		$path = (string) $parts['path'];
 
-		if ( false === $wp_index || 0 === $wp_index || empty( $path_segments[ $wp_index + 1 ] ) ) {
-			return $url;
+		$is_nitropack_url = (
+			( '' !== $host && false !== stripos( $host, 'nitrocdn.com' ) )
+			|| false !== stripos( $path, 'nitropack_static' )
+		);
+		if ( ! $is_nitropack_url ) {
+			return '';
 		}
 
-		$source_host = $path_segments[ $wp_index - 1 ];
-		if ( false === strpos( $source_host, '.' ) ) {
-			return $url;
+		$path_segments = array_values(
+			array_filter(
+				explode( '/', $path ),
+				static function ( $segment ) {
+					return '' !== $segment;
+				}
+			)
+		);
+		$wp_index      = false;
+
+		foreach ( $path_segments as $index => $segment ) {
+			if (
+				'wp-content' === $segment
+				&& $index > 0
+				&& ! empty( $path_segments[ $index + 1 ] )
+				&& 'uploads' === $path_segments[ $index + 1 ]
+			) {
+				$wp_index = $index;
+				break;
+			}
+		}
+
+		if ( false === $wp_index ) {
+			return '';
+		}
+
+		$source_host = rawurldecode( $path_segments[ $wp_index - 1 ] );
+		if ( false === strpos( $source_host, '.' ) || ! preg_match( '/^[a-z0-9.-]+$/i', $source_host ) ) {
+			return '';
 		}
 
 		$source_path = implode( '/', array_slice( $path_segments, $wp_index ) );
+		$source_url  = 'https://' . $source_host . '/' . $source_path;
 
-		return 'https://' . $source_host . '/' . $source_path;
+		if ( ! self::is_usable_media_url( $source_url ) ) {
+			return '';
+		}
+
+		return $source_url;
 	}
 
 	/**

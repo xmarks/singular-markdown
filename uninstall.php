@@ -10,6 +10,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 }
 
 delete_option( 'singular_markdown_options' );
+delete_option( 'singular_markdown_version' );
 delete_option( 'flolive_md_options' );
 wp_clear_scheduled_hook( 'singular_markdown_batch_regenerate' );
 wp_clear_scheduled_hook( 'singular_markdown_generate_post' );
